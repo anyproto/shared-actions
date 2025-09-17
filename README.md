@@ -3,6 +3,16 @@
 ## Usage
 ### Searching for secrets
 ```
+cat <<EOF > .github/workflows/secret-scanner.yml
+---
+on:
+  - push
+  - pull_request
+
+jobs:
+  secret-scanner-reusable:
+    uses: anyproto/shared-actions/.github/workflows/secret-scanner-reusable.yml@v1
+EOF
 ```
 
 ## Update release tag
