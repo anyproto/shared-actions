@@ -1,5 +1,15 @@
 # The shared actions and workflows for the organization
 
+## Usage
+### Searching for secrets
+```
+```
+
+## Update release tag
+```
+git fetch -pP && git tag "v1" && git push --tags
+```
+
 ## Contribution
 Thank you for your desire to develop Anytype together!
 
