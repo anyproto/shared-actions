@@ -16,8 +16,9 @@ EOF
 ```
 
 ## Update release tag
+the version in RELEASE must always be new !!!
 ```
-git fetch -pP && git tag "v1" && git push --tags
+RELEASE='v1.0.0'; git fetch -pP && git tag "$RELEASE" && git push --tags && git tag -f v1 && git push origin -f v1
 ```
 
 ## Contribution
