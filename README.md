@@ -12,6 +12,7 @@ on:
 jobs:
   secret-scanner-reusable:
     uses: anyproto/shared-actions/.github/workflows/secret-scanner-reusable.yml@v1
+    secrets: inherit # pass all secrets
 EOF
 ```
 
