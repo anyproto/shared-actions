@@ -2,6 +2,7 @@
 
 ## Usage
 ### Searching for secrets
+need grant the repository access to the organization secret https://github.com/organizations/anyproto/settings/secrets/actions/SLACK_WEBHOOK_URL_ALERTS
 ```
 cat <<EOF > .github/workflows/secret-scanner.yml
 ---
