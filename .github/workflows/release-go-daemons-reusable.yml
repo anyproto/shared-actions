@@ -132,6 +132,7 @@ jobs:
 
       # upload-release-asset {{
       - name: Create release and upload asset zip | Windows
+        id: release_windows
         uses: softprops/action-gh-release@v2
         if: matrix.os == 'windows'
         with:
@@ -145,6 +146,7 @@ jobs:
             ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.zip
 
       - name: Create release and upload asset tgz | Unix
+        id: release_unix
         uses: softprops/action-gh-release@v2
         if: matrix.os != 'windows'
         with:
@@ -158,6 +160,7 @@ jobs:
             ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.tgz
 
       - name: Create release and upload assets deb and rpm | Linux
+        id: release_linux
         uses: softprops/action-gh-release@v2
         if: matrix.os == 'linux'
         with:
@@ -177,7 +180,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const release_id = Number(`${{ steps.release.outputs.id }}`);
+            const release_id = Number('${{ steps.release_windows.outputs.id || steps.release_unix.outputs.id || steps.release_linux.outputs.id }}');
             const { data } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
