@@ -6,6 +6,8 @@ need grant the repository access to the organization secret https://github.com/o
 ```
 cat <<EOF > .github/workflows/secret-scanner.yml
 ---
+name: Searching for secrets
+
 on:
   - push
   - pull_request
