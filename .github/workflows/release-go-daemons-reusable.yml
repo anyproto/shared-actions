@@ -39,7 +39,7 @@ permissions: write-all
 
 jobs:
   build:
-    name: Build and release
+    name: Build
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -55,11 +55,6 @@ jobs:
             rpm_arch: x86_64
           - arch: arm64
             rpm_arch: aarch64
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-#      body: ${{ steps.release_info.outputs.body }}
-#      html_url: ${{ steps.release_info.outputs.html_url }}
-#      tag_name: ${{ steps.release_info.outputs.tag_name }}
     env:
       GOPRIVATE: github.com/anyproto
     steps:
@@ -154,7 +149,52 @@ jobs:
         run: |
           ls -al ./
 
-      # create release
+      - name: Upload asset zip | Windows
+        if: matrix.os == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-${{ matrix.arch }}
+          path: |
+            ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.zip
+
+      - name: Upload asset tgz | Unix
+        if: matrix.os != 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.tgz
+
+      - name: Upload deb and rpm | Linux
+        if: matrix.os == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-${{ matrix.arch }}
+          path: |
+            ./${{ github.event.repository.name }}_${{ steps.release-version.outputs.RELEASE_VERSION }}_${{ matrix.arch }}.deb
+            ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION_RPM }}-1.${{ matrix.rpm_arch }}.rpm
+
+
+  create_release:
+    name: Create release
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.release_info.outputs.body }}
+      html_url: ${{ steps.release_info.outputs.html_url }}
+      tag_name: ${{ steps.release_info.outputs.tag_name }}
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts (debug)
+        run: |
+          echo "Downloaded artifacts:"
+          ls -R artifacts
+
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -164,69 +204,15 @@ jobs:
           draft: false
           prerelease: true
           token: ${{ secrets.ANYTYPE_PAT }}
-
-      # upload-release-asset {{
-      - name: Create release and upload asset zip | Windows
-        id: release_windows
-        uses: softprops/action-gh-release@v2
-        if: matrix.os == 'windows'
-        with:
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: false
-          draft: false
-          prerelease: true
-          # for triggering workflow "push-docker-image-release" - https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
-          token: ${{ secrets.ANYTYPE_PAT }}
           files: |
-            ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.zip
+            artifacts/**/*
 
-      - name: Create release and upload asset tgz | Unix
-        id: release_unix
-        uses: softprops/action-gh-release@v2
-        if: matrix.os != 'windows'
-        with:
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: false
-          draft: false
-          prerelease: true
-          # for triggering workflow "push-docker-image-release" - https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
-          token: ${{ secrets.ANYTYPE_PAT }}
-          files: |
-            ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.tgz
-
-      - name: Create release and upload assets deb and rpm | Linux
-        id: release_linux
-        uses: softprops/action-gh-release@v2
-        if: matrix.os == 'linux'
-        with:
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: false
-          draft: false
-          prerelease: true
-          # for triggering workflow "push-docker-image-release" - https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
-          token: ${{ secrets.ANYTYPE_PAT }}
-          files: |
-            ./${{ github.event.repository.name }}_${{ steps.release-version.outputs.RELEASE_VERSION }}_${{ matrix.arch }}.deb
-            ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION_RPM }}-1.${{ matrix.rpm_arch }}.rpm
-      # }}
-
-
-  release_info:
-    name: Get release info
-    needs:
-      - build
-    runs-on: ubuntu-latest
-    outputs:
-      body: ${{ steps.release_info.outputs.body }}
-      html_url: ${{ steps.release_info.outputs.html_url }}
-      tag_name: ${{ steps.release_info.outputs.tag_name }}
-    steps:
       - name: Get release info
         id: release_info
         uses: actions/github-script@v7
         with:
           script: |
-            const release_id = Number('${{ needs.build.outputs.release_id }}');
+            const release_id = Number('${{ steps.create_release.outputs.id }}');
             const { data } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -241,7 +227,7 @@ jobs:
     name: Build Docker image and push to registry
     needs:
       - build
-      - release_info
+      - create_release
     runs-on: ubuntu-22.04
     steps:
       - name: Set deploy-platforms
@@ -255,7 +241,7 @@ jobs:
       - name: release version only numbers
         id: release-version
         run: |
-          echo "${{ needs.release_info.outputs.tag_name }}" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION=|' >> $GITHUB_OUTPUT
+          echo "${{ needs.create_release.outputs.tag_name }}" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION=|' >> $GITHUB_OUTPUT
 
       - name: Set env ARTIFACT_PREFIX
         run: |
@@ -264,7 +250,7 @@ jobs:
       - name: Download release asset amd64
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
-          version: tags/${{ needs.release_info.outputs.tag_name }}
+          version: tags/${{ needs.create_release.outputs.tag_name }}
           file: ${{ env.ARTIFACT_PREFIX }}_amd64.deb
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -272,7 +258,7 @@ jobs:
         if: ${{ inputs.deploy-arm }}
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
-          version: tags/${{ needs.release_info.outputs.tag_name }}
+          version: tags/${{ needs.create_release.outputs.tag_name }}
           file: ${{ env.ARTIFACT_PREFIX }}_arm64.deb
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -320,7 +306,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ needs.release_info.outputs.tag_name }}
+            ghcr.io/${{ github.repository }}:${{ needs.create_release.outputs.tag_name }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=https://tech.anytype.io
 
       - name: Login to Docker Hub
@@ -341,14 +327,14 @@ jobs:
           push: true
           tags: |
             docker.io/${{ github.repository }}:latest
-            docker.io/${{ github.repository }}:${{ needs.release_info.outputs.tag_name }}
+            docker.io/${{ github.repository }}:${{ needs.create_release.outputs.tag_name }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=https://tech.anytype.io
 
 
   notify:
     needs:
       - build
-      - release_info
+      - create_release
       - push-docker-image
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -359,9 +345,9 @@ jobs:
           status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
           notification_title: "${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌' || '✅' }} {workflow} {repo}"
           message_format: |
-            *Release:* <${{ needs.release_info.outputs.html_url }}|${{ needs.release_info.outputs.tag_name || 'none' }}>
+            *Release:* <${{ needs.create_release.outputs.html_url }}|${{ needs.create_release.outputs.tag_name || 'none' }}>
             *Description:*
-            ${{ needs.release_info.outputs.body || 'no changes, build skipped' }}
+            ${{ needs.create_release.outputs.body || 'no changes, build skipped' }}
           footer: "Linked Repo <{repo_url}|{repo}> | <{run_url}|View Workflow Run>"
         env:
           SLACK_WEBHOOK_URL: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && secrets.SLACK_WEBHOOK_URL_ALERTS || secrets.SLACK_WEBHOOK_URL_RELEASE_TRAIN }}
