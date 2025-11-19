@@ -172,7 +172,7 @@ jobs:
         if: matrix.os == 'windows'
         with:
           name: Release ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: true
           # for triggering workflow "push-docker-image-release" - https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
@@ -186,7 +186,7 @@ jobs:
         if: matrix.os != 'windows'
         with:
           name: Release ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: true
           # for triggering workflow "push-docker-image-release" - https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
@@ -200,7 +200,7 @@ jobs:
         if: matrix.os == 'linux'
         with:
           name: Release ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: true
           # for triggering workflow "push-docker-image-release" - https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
