@@ -56,9 +56,10 @@ jobs:
           - arch: arm64
             rpm_arch: aarch64
     outputs:
-      body: ${{ steps.release_info.outputs.body }}
-      html_url: ${{ steps.release_info.outputs.html_url }}
-      tag_name: ${{ steps.release_info.outputs.tag_name }}
+      release_id: ${{ steps.create_release.outputs.id }}
+#      body: ${{ steps.release_info.outputs.body }}
+#      html_url: ${{ steps.release_info.outputs.html_url }}
+#      tag_name: ${{ steps.release_info.outputs.tag_name }}
     env:
       GOPRIVATE: github.com/anyproto
     steps:
@@ -153,6 +154,17 @@ jobs:
         run: |
           ls -al ./
 
+      # create release
+      - name: Create release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: true
+          token: ${{ secrets.ANYTYPE_PAT }}
+
       # upload-release-asset {{
       - name: Create release and upload asset zip | Windows
         id: release_windows
@@ -198,12 +210,23 @@ jobs:
             ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION_RPM }}-1.${{ matrix.rpm_arch }}.rpm
       # }}
 
+
+  release_info:
+    name: Get release info
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.release_info.outputs.body }}
+      html_url: ${{ steps.release_info.outputs.html_url }}
+      tag_name: ${{ steps.release_info.outputs.tag_name }}
+    steps:
       - name: Get release info
         id: release_info
         uses: actions/github-script@v7
         with:
           script: |
-            const release_id = Number('${{ steps.release_windows.outputs.id || steps.release_unix.outputs.id || steps.release_linux.outputs.id }}');
+            const release_id = Number('${{ needs.build.outputs.release_id }}');
             const { data } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -218,6 +241,7 @@ jobs:
     name: Build Docker image and push to registry
     needs:
       - build
+      - release_info
     runs-on: ubuntu-22.04
     steps:
       - name: Set deploy-platforms
@@ -231,7 +255,7 @@ jobs:
       - name: release version only numbers
         id: release-version
         run: |
-          echo "${{ needs.build.outputs.tag_name }}" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION=|' >> $GITHUB_OUTPUT
+          echo "${{ needs.release_info.outputs.tag_name }}" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION=|' >> $GITHUB_OUTPUT
 
       - name: Set env ARTIFACT_PREFIX
         run: |
@@ -240,7 +264,7 @@ jobs:
       - name: Download release asset amd64
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
-          version: tags/${{ needs.build.outputs.tag_name }}
+          version: tags/${{ needs.release_info.outputs.tag_name }}
           file: ${{ env.ARTIFACT_PREFIX }}_amd64.deb
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -248,7 +272,7 @@ jobs:
         if: ${{ inputs.deploy-arm }}
         uses: dsaltares/fetch-gh-release-asset@1.1.2
         with:
-          version: tags/${{ needs.build.outputs.tag_name }}
+          version: tags/${{ needs.release_info.outputs.tag_name }}
           file: ${{ env.ARTIFACT_PREFIX }}_arm64.deb
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -296,7 +320,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ needs.build.outputs.tag_name }}
+            ghcr.io/${{ github.repository }}:${{ needs.release_info.outputs.tag_name }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=https://tech.anytype.io
 
       - name: Login to Docker Hub
@@ -317,13 +341,14 @@ jobs:
           push: true
           tags: |
             docker.io/${{ github.repository }}:latest
-            docker.io/${{ github.repository }}:${{ needs.build.outputs.tag_name }}
+            docker.io/${{ github.repository }}:${{ needs.release_info.outputs.tag_name }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=https://tech.anytype.io
 
 
   notify:
     needs:
       - build
+      - release_info
       - push-docker-image
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -334,9 +359,9 @@ jobs:
           status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
           notification_title: "${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌' || '✅' }} {workflow} {repo}"
           message_format: |
-            *Release:* <${{ needs.build.outputs.html_url }}|${{ needs.build.outputs.tag_name || 'none' }}>
+            *Release:* <${{ needs.release_info.outputs.html_url }}|${{ needs.release_info.outputs.tag_name || 'none' }}>
             *Description:*
-            ${{ needs.build.outputs.body || 'no changes, build skipped' }}
+            ${{ needs.release_info.outputs.body || 'no changes, build skipped' }}
           footer: "Linked Repo <{repo_url}|{repo}> | <{run_url}|View Workflow Run>"
         env:
           SLACK_WEBHOOK_URL: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && secrets.SLACK_WEBHOOK_URL_ALERTS || secrets.SLACK_WEBHOOK_URL_RELEASE_TRAIN }}
