@@ -4,13 +4,20 @@ on:
   workflow_call:
     inputs:
       start_mongodb:
+        description: run mongodb on build step
         type: boolean
         required: false
         default: false
       start_redis:
+        description: run redis on build step
         type: boolean
         required: false
         default: false
+      build-run-unit-tests:
+        description: run unit tests on build step
+        type: boolean
+        required: false
+        default: true
       dockerfile-image:
         description: image for Generate Dockerfile
         type: string
@@ -94,6 +101,7 @@ jobs:
         run: make deps CGO_ENABLED=0
 
       - name: unit tests
+        if: ${{ inputs.build-run-unit-tests }}
         run: make test CGO_ENABLED=0
 
       - name: build
