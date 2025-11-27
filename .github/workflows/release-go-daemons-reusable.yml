@@ -39,6 +39,11 @@ on:
         type: string
         required: false
         default: "echo cmd"
+      matrix-os:
+        description: "List of OS targets"
+        type: string
+        required: false
+        default: '["linux"]'
 
 permissions: write-all
 
@@ -51,8 +56,7 @@ jobs:
         arch:
           - amd64
           - arm64
-        os:
-          - linux
+        os: ${{ fromJson(inputs.matrix-os) }}
         go-version:
           - '1.24'
         include:
