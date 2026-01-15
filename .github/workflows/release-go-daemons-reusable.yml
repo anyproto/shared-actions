@@ -47,7 +47,7 @@ on:
         required: false
         default: "echo cmd"
       matrix-os:
-        description: "List of OS targets"
+        description: list of OS targets
         type: string
         required: false
         default: '["linux"]'
@@ -85,44 +85,47 @@ jobs:
 
       - name: Start MongoDB
         if: ${{ inputs.start_mongodb }}
-        uses: supercharge/mongodb-github-action@1.8.0
+        uses: supercharge/mongodb-github-action@1.12.1
         with:
-          mongodb-version: 6.0
+          mongodb-version: 8.2
           mongodb-replica-set: test-rs
 
       - name: Start Redis
-        uses: supercharge/redis-github-action@1.8.0
+        uses: supercharge/redis-github-action@1.8.1
         if: ${{ inputs.start_redis }}
         with:
           redis-image: redis/redis-stack-server
 
       # build {{
-      - name: deps
+      - name: Install dependencies
         run: make deps CGO_ENABLED=0
 
-      - name: unit tests
+      - name: Run unit tests
         if: ${{ inputs.build-run-unit-tests }}
         run: make test CGO_ENABLED=0
 
-      - name: build
+      - name: Run build
         run: make build CGO_ENABLED=0 BUILD_GOOS=${{ matrix.os }} BUILD_GOARCH=${{ matrix.arch }}
       # }}
 
-      - name: get release version
+      - name: Get release version
         id: release-version
+        shell: bash
         run: |
-          echo "$GITHUB_REF_NAME" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION=|' >> $GITHUB_OUTPUT
-          echo "$GITHUB_REF_NAME" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION_RPM=|; s|-|_|g' >> $GITHUB_OUTPUT # FPM automatically converts versions for RPM
+          tag="${GITHUB_REF_NAME##*/}"
+          ver="${tag#v}"
+          echo "RELEASE_VERSION=${ver}" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_VERSION_RPM=${ver//-/_}" >> "$GITHUB_OUTPUT" # FPM converts for RPM
 
-      - name: addication command for build step
+      - name: Addication command for build step
         run: ${{ inputs.build-cmd }}
 
-      # create asset {{
-      - name: create zip archive
+      # create assets {{
+      - name: Create zip archive
         if: matrix.os == 'windows'
         run: |
           zip --junk-paths ${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.zip bin/*
-      - name: create tar archive
+      - name: Create tar archive
         if: matrix.os != 'windows'
         run: |
           tar \
@@ -133,7 +136,7 @@ jobs:
             --file=${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.tgz \
             --directory=bin/ \
             .
-      - name: create package deb
+      - name: Create .deb package
         if: matrix.os == 'linux'
         uses: fb929/github-action-fpm@master
         with:
@@ -148,7 +151,7 @@ jobs:
             --input-type dir
             --output-type deb
           fpm_args: ./bin
-      - name: create package rpm
+      - name: Create .rpm package
         if: matrix.os == 'linux'
         uses: fb929/github-action-fpm@master
         with:
@@ -165,7 +168,7 @@ jobs:
           fpm_args: ./bin
       # }}
 
-      - name: debug
+      - name: Debug
         run: |
           ls -al ./
 
@@ -185,7 +188,7 @@ jobs:
           path: |
             ./${{ github.event.repository.name }}-${{ steps.release-version.outputs.RELEASE_VERSION }}.${{ matrix.os }}-${{ matrix.arch }}.tgz
 
-      - name: Upload deb and rpm | Linux
+      - name: Upload .deb and .rpm assets | Linux
         if: matrix.os == 'linux'
         uses: actions/upload-artifact@v4
         with:
@@ -215,11 +218,18 @@ jobs:
           echo "Downloaded artifacts:"
           ls -R artifacts
 
+      - name: Get release version
+        id: release-version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME##*/}"
+          echo "RELEASE_VERSION=${tag}" >> "$GITHUB_OUTPUT"
+
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref_name }}
+          name: Release ${{ steps.release-version.outputs.RELEASE_VERSION }}
           generate_release_notes: true
           draft: false
           prerelease: true
@@ -248,7 +258,7 @@ jobs:
     needs:
       - build
       - create_release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Set deploy-platforms
         run: |
@@ -258,10 +268,14 @@ jobs:
             echo "DEPLOY_PLATFORMS=linux/amd64" >> $GITHUB_ENV
           fi
 
-      - name: release version only numbers
+      - name: Normalization of the release version
         id: release-version
+        shell: bash
         run: |
-          echo "${{ needs.create_release.outputs.tag_name }}" | sed 's|^[a-zA-Z]\+|RELEASE_VERSION=|' >> $GITHUB_OUTPUT
+          tag="${{ needs.create_release.outputs.tag_name }}"
+          tag="${tag##*/}"
+          ver="${tag#v}"
+          echo "RELEASE_VERSION=${ver}" >> "$GITHUB_OUTPUT"
 
       - name: Set env ARTIFACT_PREFIX
         run: |
@@ -317,7 +331,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push to github registry
+      - name: Push to GitHub registry
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -326,7 +340,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ needs.create_release.outputs.tag_name }}
+            ghcr.io/${{ github.repository }}:v${{ steps.release-version.outputs.RELEASE_VERSION }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=https://tech.anytype.io
 
       - name: Login to Docker Hub
@@ -347,7 +361,7 @@ jobs:
           push: true
           tags: |
             docker.io/${{ github.repository }}:latest
-            docker.io/${{ github.repository }}:${{ needs.create_release.outputs.tag_name }}
+            docker.io/${{ github.repository }}:v${{ steps.release-version.outputs.RELEASE_VERSION }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=https://tech.anytype.io
 
 
