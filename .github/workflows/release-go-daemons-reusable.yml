@@ -303,7 +303,8 @@ jobs:
 
       - name: Generate Dockerfile
         run: |
-          cat <<EOF > Dockerfile
+          {
+            cat <<EOF
           # syntax=docker/dockerfile:1
           FROM ${{ inputs.dockerfile-image }}
           LABEL org.opencontainers.image.source=${{ github.repositoryUrl }}
@@ -314,9 +315,12 @@ jobs:
           RUN apt-get install -y ./${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb && rm -f ./${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb
           RUN ${{ inputs.dockerfile-run }}
           RUN rm -rf /var/lib/apt/lists/*
-          $([ -n "${{ inputs.dockerfile-expose-ports }}" ] && echo "${{ inputs.dockerfile-expose-ports }}" | tr ' ' '\n' | sed 's/^/EXPOSE /')
-          CMD ${{ inputs.dockerfile-cmd }}
           EOF
+            if [ -n "${{ inputs.dockerfile-expose-ports }}" ]; then
+              printf 'EXPOSE %s\n' ${{ inputs.dockerfile-expose-ports }}
+            fi
+            echo "CMD ${{ inputs.dockerfile-cmd }}"
+          } > Dockerfile
 
       - name: Debug
         run: pwd; cat Dockerfile;  ls -R
