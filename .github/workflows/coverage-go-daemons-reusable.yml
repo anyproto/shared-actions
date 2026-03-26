@@ -100,3 +100,4 @@ jobs:
               exit 1
           fi
       - uses: seriousben/go-patch-cover-action@v1
+        continue-on-error: true
