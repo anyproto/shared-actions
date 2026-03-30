@@ -331,8 +331,11 @@ jobs:
             echo "EXPOSE ${{ inputs.dockerfile-expose-ports }}" >> Dockerfile
           fi
           cmd='${{ inputs.dockerfile-cmd }}'
-          json_array=$(echo "$cmd" | xargs -n1 printf '"%s",' | sed 's/,$//')
-          printf 'CMD [%s]\n' "$json_array" >> Dockerfile
+          if [[ "$cmd" == \[* ]]; then
+            printf 'CMD %s\n' "$cmd" >> Dockerfile
+          else
+            printf 'CMD ["%s"]\n' "$cmd" >> Dockerfile
+          fi
 
       - name: Debug
         run: pwd; cat Dockerfile;  ls -R
