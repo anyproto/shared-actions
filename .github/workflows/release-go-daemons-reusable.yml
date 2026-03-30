@@ -22,7 +22,7 @@ on:
         description: image for Generate Dockerfile
         type: string
         required: false
-        default: ubuntu:22.04
+        default: ubuntu:25.10
       dockerfile-run:
         description: additional "run" for Generate Dockerfile
         type: string
@@ -313,8 +313,7 @@ jobs:
 
       - name: Generate Dockerfile
         run: |
-          {
-            cat <<EOF
+          cat > Dockerfile << EOF
           # syntax=docker/dockerfile:1
           FROM ${{ inputs.dockerfile-image }}
           LABEL org.opencontainers.image.source=${{ github.repositoryUrl }}
@@ -322,17 +321,18 @@ jobs:
           LABEL org.opencontainers.image.licenses=MIT
           ARG TARGETARCH
           COPY ${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb .
-          RUN apt-get install -y ./${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb && rm -f ./${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb
+          RUN apt update -y && \\
+              apt install -y ./${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb && \\
+              rm -f ./${{ env.ARTIFACT_PREFIX }}_\${TARGETARCH}.deb && \\
+              rm -rf /var/lib/apt/lists/*
           RUN ${{ inputs.dockerfile-run }}
-          RUN rm -rf /var/lib/apt/lists/*
           EOF
-            if [ -n "${{ inputs.dockerfile-expose-ports }}" ]; then
-              printf 'EXPOSE %s\n' ${{ inputs.dockerfile-expose-ports }}
-            fi
-            cmd='${{ inputs.dockerfile-cmd }}'
-            json_array=$(echo "$cmd" | xargs -n1 printf '"%s",' | sed 's/,$//')
-            printf 'CMD [%s]\n' "$json_array"
-          } > Dockerfile
+          if [ -n "${{ inputs.dockerfile-expose-ports }}" ]; then
+            echo "EXPOSE ${{ inputs.dockerfile-expose-ports }}" >> Dockerfile
+          fi
+          cmd='${{ inputs.dockerfile-cmd }}'
+          json_array=$(echo "$cmd" | xargs -n1 printf '"%s",' | sed 's/,$//')
+          printf 'CMD [%s]\n' "$json_array" >> Dockerfile
 
       - name: Debug
         run: pwd; cat Dockerfile;  ls -R
