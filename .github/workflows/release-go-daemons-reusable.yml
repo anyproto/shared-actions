@@ -24,12 +24,12 @@ on:
         required: false
         default: ubuntu:22.04
       dockerfile-run:
-        description: addication "run" for Generate Dockerfile
+        description: additional "run" for Generate Dockerfile
         type: string
         required: false
         default: "echo run"
       dockerfile-cmd:
-        description: addication "cmd" for Generate Dockerfile
+        description: additional "cmd" for Generate Dockerfile
         type: string
         required: false
         default: "echo cmd"
@@ -42,7 +42,7 @@ on:
         required: false
         default: true
       build-cmd:
-        description: addication "cmd" for build step
+        description: additional "cmd" for build step
         type: string
         required: false
         default: "echo cmd"
@@ -60,14 +60,17 @@ on:
         description: go version
         type: string
         required: false
-        default: 1.25
+        default: '1.25'
 
-permissions: write-all
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       matrix:
         arch:
@@ -127,7 +130,7 @@ jobs:
           echo "RELEASE_VERSION=${ver}" >> "$GITHUB_OUTPUT"
           echo "RELEASE_VERSION_RPM=${ver//-/_}" >> "$GITHUB_OUTPUT" # FPM converts for RPM
 
-      - name: Addication command for build step
+      - name: Additional command for build step
         run: ${{ inputs.build-cmd }}
 
       # create assets {{
@@ -213,6 +216,7 @@ jobs:
     needs:
       - build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       body: ${{ steps.release_info.outputs.body }}
       html_url: ${{ steps.release_info.outputs.html_url }}
@@ -269,6 +273,7 @@ jobs:
       - build
       - create_release
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Set deploy-platforms
         run: |
@@ -324,7 +329,9 @@ jobs:
             if [ -n "${{ inputs.dockerfile-expose-ports }}" ]; then
               printf 'EXPOSE %s\n' ${{ inputs.dockerfile-expose-ports }}
             fi
-            echo "CMD ${{ inputs.dockerfile-cmd }}"
+            cmd='${{ inputs.dockerfile-cmd }}'
+            json_array=$(echo "$cmd" | xargs -n1 printf '"%s",' | sed 's/,$//')
+            printf 'CMD [%s]\n' "$json_array"
           } > Dockerfile
 
       - name: Debug
@@ -332,9 +339,9 @@ jobs:
 
       # push to registry
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -384,6 +391,7 @@ jobs:
       - push-docker-image
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Notify Slack (workflow result)
         uses: ravsamhq/notify-slack-action@v2
