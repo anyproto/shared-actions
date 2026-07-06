@@ -60,7 +60,7 @@ on:
         description: go version
         type: string
         required: false
-        default: '1.25'
+        default: '1.26'
 
 permissions:
   contents: write
