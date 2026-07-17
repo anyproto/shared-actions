@@ -396,15 +396,68 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Release notes are arbitrary text (PR titles, usernames). Telegram's legacy
+      # Markdown has no escape mechanism, so any lone * or _ -- e.g. the "* " bullets
+      # GitHub generates, or a dependabot title like "Bump github.com/x/client_golang"
+      # -- either aborts the send with "can't parse entities" or silently mangles the
+      # message. HTML mode is the only format where the input can be fully escaped.
+      - name: Compose Telegram message
+        id: message
+        uses: actions/github-script@v9
+        env:
+          # Passed via env, never interpolated into the script body, so that
+          # release notes cannot be executed as JavaScript.
+          RELEASE_BODY: ${{ needs.create_release.outputs.body }}
+          RELEASE_TAG: ${{ needs.create_release.outputs.tag_name }}
+          RELEASE_URL: ${{ needs.create_release.outputs.html_url }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          REPOSITORY: ${{ github.repository }}
+          STATUS: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌' || '✅' }}
+        with:
+          script: |
+            const MAX_BODY = 3500; // Telegram rejects messages over 4096 chars
+            const esc = (s) => String(s || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
+
+            let body = (process.env.RELEASE_BODY || '').replace(/\r\n/g, '\n').trim();
+            let bodyHtml = 'no changes, build skipped';
+
+            if (body) {
+              // Trim on a line boundary before tagging, so a cut can never land
+              // inside a tag or an entity.
+              if (body.length > MAX_BODY) {
+                body = body.slice(0, MAX_BODY);
+                const nl = body.lastIndexOf('\n');
+                if (nl > 0) body = body.slice(0, nl);
+                body += '\n…(truncated)';
+              }
+              bodyHtml = body.split('\n').map((line) => esc(line)
+                .replace(/^\s{0,3}#{1,6}\s+(.*)$/, '<b>$1</b>')
+                .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+                .replace(/^\s{0,3}[*-]\s+/, '• ')
+                .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>')
+              ).join('\n');
+            }
+
+            const tag = esc(process.env.RELEASE_TAG) || 'none';
+            const url = process.env.RELEASE_URL;
+            const release = url ? `<a href="${esc(url)}">${tag}</a>` : tag;
+
+            core.setOutput('text', [
+              `${process.env.STATUS} <b>${esc(process.env.WORKFLOW_NAME)}</b> ${esc(process.env.REPOSITORY)}`,
+              '',
+              `<b>Release:</b> ${release}`,
+              '<b>Description:</b>',
+              bodyHtml,
+            ].join('\n'));
+
       - name: Notify Telegram (workflow result)
         uses: appleboy/telegram-action@v1.0.1
         with:
           to: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          format: markdown
-          message: |
-            ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌' || '✅' }} *${{ github.workflow }}* ${{ github.repository }}
-
-            *Release:* [${{ needs.create_release.outputs.tag_name || 'none' }}](${{ needs.create_release.outputs.html_url }})
-            *Description:*
-            ${{ needs.create_release.outputs.body || 'no changes, build skipped' }}
+          # Canonical Bot API parse_mode: the action forwards this value verbatim.
+          format: HTML
+          message: ${{ steps.message.outputs.text }}
